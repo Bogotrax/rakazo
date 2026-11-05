@@ -13,7 +13,7 @@ const actor = {
 function fixture() {
   const prisma = {
     spaceMember: { findUnique: vi.fn().mockResolvedValue({ userId: actor.userId }) },
-    botReader: { findMany: vi.fn().mockResolvedValue([{ botId: "shared-bot" }]) },
+    botReader: { findMany: vi.fn().mockResolvedValue([{ botId: "shared-bot", role: "reader" }]) },
     bot: {
       findMany: vi.fn().mockResolvedValue([{ id: "shared-bot", name: "Shared" }]),
       findFirst: vi.fn().mockResolvedValue({
@@ -99,7 +99,24 @@ describe("explicit bot read grants", () => {
       take: 101,
     });
     expect(currentDbContext()).toBeUndefined();
-    expect(Object.keys(repos).sort()).toEqual(["list", "messages"]);
+    expect(Object.keys(repos).sort()).toEqual(["list", "messages", "sendTarget"]);
+  });
+
+  it("exposes the shared bot's role alongside its name", async () => {
+    const { repos } = fixture();
+    const list = await repos.list(actor);
+    expect(list).toEqual([{ id: "shared-bot", name: "Shared", role: "reader" }]);
+  });
+
+  it("lets only participants send, resolving the owner for the turn", async () => {
+    const { prisma, repos } = fixture();
+    await expect(repos.sendTarget(actor, "shared-bot")).rejects.toThrow("Resource not found");
+    prisma.botReader.findMany.mockResolvedValue([{ botId: "shared-bot", role: "participant" }]);
+    const target = await repos.sendTarget(actor, "shared-bot");
+    expect(target).toEqual({ botId: "shared-bot", threadId: "thread", ownerId: "owner" });
+    await expect(repos.sendTarget(actor, "other-bot")).rejects.toThrow("Resource not found");
+    prisma.spaceMember.findUnique.mockResolvedValue(null as never);
+    await expect(repos.sendTarget(actor, "shared-bot")).rejects.toThrow("Resource not found");
   });
 
   it("paginates without dropping the oldest visible message", async () => {

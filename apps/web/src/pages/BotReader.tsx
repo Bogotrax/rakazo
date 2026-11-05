@@ -1,20 +1,42 @@
 import { Trans } from "@lingui/react/macro";
 import { Button } from "@rakazo/ui-web";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useSpaceQueries } from "../lib/query";
 
-/** Dedicated read surface: no composer, tool actions, file access or bot settings. */
+/** Dedicated read surface: no settings, tool actions or file access; participants may chat. */
 export function BotReaderPage() {
   const { botId = "" } = useParams();
   const queries = useSpaceQueries();
+  const queryClient = useQueryClient();
   const [before, setBefore] = useState<number>();
+  const [text, setText] = useState("");
+  const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
   const result = useQuery({
     ...queries.botReaders.messages.queryOptions({ input: { botId, before } }),
     refetchInterval: before === undefined ? 2000 : false,
     retry: false,
   });
+  const participant = result.data?.role === "participant";
+  async function send() {
+    const message = text.trim();
+    if (!message || sending) return;
+    setSending(true);
+    setSendError(null);
+    try {
+      await queries.botReaders.send.call({ botId, text: message });
+      setText("");
+      await queryClient.invalidateQueries({
+        queryKey: queries.botReaders.messages.queryKey({ input: { botId, before } }),
+      });
+    } catch {
+      setSendError("Couldn't send. Try again.");
+    } finally {
+      setSending(false);
+    }
+  }
   return (
     <main className="flex h-full flex-col bg-background text-foreground">
       <header className="flex items-center gap-4 border-b p-4">
@@ -23,7 +45,7 @@ export function BotReaderPage() {
         </Link>
         <h1 className="font-medium">{result.data?.name}</h1>
         <span className="text-sm text-muted-foreground">
-          <Trans>Read only</Trans>
+          {participant ? <Trans>Participant</Trans> : <Trans>Read only</Trans>}
         </span>
       </header>
       <div className="flex-1 overflow-auto p-4">
@@ -66,6 +88,33 @@ export function BotReaderPage() {
           )}
         </div>
       </div>
+      {participant ? (
+        <form
+          className="flex gap-2 border-t p-4"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void send();
+          }}
+        >
+          <input
+            type="text"
+            value={text}
+            onChange={(event) => setText(event.target.value)}
+            disabled={sending}
+            placeholder="Message"
+            aria-label="Message"
+            className="w-full rounded-md border px-3 py-2"
+          />
+          <Button type="submit" disabled={sending || !text.trim()}>
+            <Trans>Send</Trans>
+          </Button>
+          {sendError ? (
+            <p role="alert" className="self-center text-sm text-muted-foreground">
+              {sendError}
+            </p>
+          ) : null}
+        </form>
+      ) : null}
     </main>
   );
 }

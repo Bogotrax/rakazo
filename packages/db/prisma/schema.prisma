@@ -731,6 +731,8 @@ model BotReader {
   botId String
   userId String
   createdAt DateTime @default(now())
+  /// "reader" may only read shared conversations; "participant" may also send text.
+  role String @default("reader")
 
   @@id([botId, userId])
   @@index([userId])

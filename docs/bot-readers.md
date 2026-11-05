@@ -1,4 +1,4 @@
-# Explicit read-only bot sharing
+# Explicit bot sharing (readers and participants)
 
 ## Scope
 
@@ -6,6 +6,10 @@ A registered Space member can read a bot owned by another member only when an
 administrator explicitly adds a `(botId, userId)` grant to `bot_readers`.
 Membership alone does not expose any bots. This implementation does not provide
 an invitation or grant-management UI.
+
+A grant carries a `role` (`reader`, the default, or `participant`). A
+`participant` may additionally send conversation text into the shared bot
+thread. Readers never can.
 
 The web and Electron sidebar lists granted bots with a read-only label. Opening
 one uses a dedicated reader, not the owner's interactive chat. Native mobile
@@ -15,11 +19,19 @@ does not list grants yet; existing native ownership checks remain unchanged.
 
 - Every list and message request checks current Space membership.
 - Every message request checks the explicit grant, selected Space, and active bot.
+- Every send request additionally requires the `participant` role on the exact
+  grant, then re-resolves owner, bot, thread, and model setup as the owner.
 - Only user and bot conversation text is returned. Tool payloads, attachments,
   approvals, settings, and credentials are not exposed by these endpoints.
 - Conversation text itself can contain sensitive material: grant it deliberately.
-- The fixed read runs in the bot owner's tenant context after authorization.
-  The owner's identity is never substituted into a caller's writable request.
+- A participant send runs in the owner's tenant (the owner's model credentials),
+  but the owner's identity is never substituted into a caller's other requests.
+  Messages carry no author column; the participant's display name is prefixed in
+  the sent text (`From <name> (participant): ...`), so a participant cannot
+  impersonate the owner silently.
+- Participants cannot change settings, manage grants, approve actions, or stop
+  runs. Sending can trigger the bot, so a participant send spends the owner's
+  model budget; grant `participant` sparingly.
 - Existing bot, thread, message, run, and action endpoints retain ownership checks.
 - Removing a grant prevents subsequent reads, but cannot erase previously read data.
 
@@ -38,12 +50,16 @@ Repository root: `<repository>`; keep all private values outside tracked files.
 2. Build the shared application image once. API and web use the same Dockerfile.
 3. Apply the additive `20261105180000_bot_readers` migration before updating API.
    It creates a grant table and foreign keys; existing releases remain compatible.
+   The additive `20261106120000_bot_reader_role` migration adds the `role`
+   column with default `reader`; existing grants keep reading unchanged.
 4. Update API and web without restarting unrelated services or deleting volumes.
 5. Resolve the intended bot, owner, reader, and Space from the database. Verify
-   current membership before inserting the grant. Never grant by bot name alone.
+   current membership before inserting the grant with the intended `role`.
+   Never grant by bot name alone.
 6. Verify with the actual application database role that the reader lists and
-   reads the bot, another bot remains inaccessible, and normal write lookups fail.
-7. Reload the reader's browser, select the shared Space, then open the read-only bot.
+   reads the bot, another bot remains inaccessible, a `reader` cannot send, and a
+   `participant` can send but cannot reach settings or actions.
+7. Reload the reader's browser, select the shared Space, then open the shared bot.
 
 Revocation is a deletion of the exact pair from `bot_readers`; it needs no restart.
 No passwords, session tokens, or account impersonation are needed to create a grant.

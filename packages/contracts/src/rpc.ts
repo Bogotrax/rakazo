@@ -539,13 +539,16 @@ export const appContract = {
       .output(z.object({ ok: z.literal(true) })),
   },
   botReaders: {
-    list: oc.output(z.array(z.object({ id: Id, name: z.string() }))),
+    list: oc.output(
+      z.array(z.object({ id: Id, name: z.string(), role: z.enum(["reader", "participant"]) })),
+    ),
     messages: oc
       .input(z.object({ botId: Id, before: z.number().int().nonnegative().optional() }))
       .output(
         z.object({
           id: Id,
           name: z.string(),
+          role: z.enum(["reader", "participant"]),
           messages: z.array(
             z.object({
               id: Id,
@@ -558,6 +561,10 @@ export const appContract = {
           nextBefore: z.number().int().optional(),
         }),
       ),
+    /** A participant sends conversation text into the shared bot's thread as themselves. */
+    send: oc
+      .input(z.object({ botId: Id, text: z.string().trim().min(1).max(8000) }))
+      .output(z.object({ ok: z.literal(true) })),
   },
   bots: {
     list: oc.output(z.array(BotSchema)),
