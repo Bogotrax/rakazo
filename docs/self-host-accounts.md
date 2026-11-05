@@ -41,12 +41,13 @@ owner. This is what stops someone who registered another person's address from k
 A password reset proves the mailbox the same way, so resetting an unverified account's password
 also removes its SSO links, passkeys and paired devices.
 
-Allowlisted signup requires mailbox verification and email delivery, including the first account.
-Without email delivery, use the server-side account bootstrap described below; public signup never marks an address verified or assigns server permissions.
+Without email delivery, allowlisted accounts can sign up and sign in with a password, but remain
+unverified. The allowlist restricts registration; it does not prove mailbox ownership. Public signup
+never marks an address verified or assigns server permissions.
 
 ## Installations without email
 
-For an installation without email, first set `SIGNUPS_ENABLED=false` in `.env` and start the stack.
+To provision accounts privately on an installation without email, first set `SIGNUPS_ENABLED=false` in `.env` and start the stack.
 Create the intended account privately (the password stays in the shell environment):
 
 ```bash

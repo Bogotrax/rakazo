@@ -355,16 +355,12 @@ describe("loopback trusted origins", () => {
 describe("identity trust through auth endpoints", () => {
   // These branches sit behind Better Auth's HTTP checks, so call the session hook directly.
   it.each([
-    ["missing user", null],
-    ["messaging identity", "msg-test@messaging.invalid"],
-    ["email delivery", "approved@example.test"],
-    ["disallowed email", "outsider@other.test", false],
-    ["first-account claim denied", "approved@example.test", false],
-  ])("codes required verification for %s", async (reason, email, delivery = true) => {
+    ["missing user", null, true, "EMAIL_VERIFICATION_REQUIRED"],
+    ["messaging identity", "msg-test@messaging.invalid", true, "EMAIL_VERIFICATION_REQUIRED"],
+    ["email delivery", "approved@example.test", true, "EMAIL_VERIFICATION_REQUIRED"],
+    ["disallowed email", "outsider@other.test", false, "REGISTRATION_CLOSED"],
+  ])("rejects a session for %s", async (_reason, email, delivery, code) => {
     const f = fixture({ allowlist: "@example.test", delivery });
-    if (reason === "first-account claim denied") {
-      f.data.user!.push({ id: "other-user", email: "other@example.test" });
-    }
     const hook = f.auth.options.databaseHooks!.session!.create!.before!;
     await expect(
       hook(
@@ -381,7 +377,7 @@ describe("identity trust through auth endpoints", () => {
         } as never,
       ),
     ).rejects.toMatchObject({
-      body: { code: "EMAIL_VERIFICATION_REQUIRED", message: "Email verification required" },
+      body: { code },
     });
   });
 
@@ -412,19 +408,42 @@ describe("identity trust through auth endpoints", () => {
     expect(bootstrapUserSpace).toHaveBeenCalledTimes(1);
   });
 
-  it("never lets a first allowlisted account skip mailbox proof without delivery", async () => {
+  it("lets an allowlisted account sign up and in without delivery, staying unverified", async () => {
     const f = fixture({ allowlist: "@example.test", delivery: false });
-    const results = await Promise.all([f.signup(), f.signup("second@example.test")]);
-    for (const response of results) {
-      expect(response.status).toBe(400);
-      expect(await response.text()).toContain("Registration requires email delivery");
-    }
-    expect(f.data.user).toHaveLength(0);
-    expect(f.policy.ownerUserId).toBeNull();
-    expect(bootstrapUserSpace).not.toHaveBeenCalled();
+    const outsider = await f.signup("outsider@other.test");
+    expect(outsider.status).toBe(400);
+    expect(await outsider.json()).toMatchObject({ code: "EMAIL_NOT_ALLOWED" });
+    const response = await f.signup();
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      token: string;
+      user: { id: string; emailVerified: boolean };
+    };
+    expect(body.token).toEqual(expect.any(String));
+    expect(body.user.emailVerified).toBe(false);
+    expect(body.user.id).not.toBe("msg-attacker-chosen-id");
+    expect(bootstrapUserSpace).toHaveBeenCalledTimes(1);
+    expect(f.messages).toHaveLength(0);
+    expect(await f.sessionFor(body.token)).toMatchObject({
+      user: { id: body.user.id, emailVerified: false },
+    });
+    expect(await (await f.request("/get-session", undefined, body.token)).json()).toMatchObject({
+      user: { id: body.user.id, emailVerified: false },
+    });
+    expect((await f.request("/update-user", { name: "Changed" }, body.token)).status).toBe(200);
+    expect(f.data.user![0]).toMatchObject({ name: "Changed", emailVerified: false });
+    expect((await f.request("/sign-out", {}, body.token)).status).toBe(200);
+    const signedIn = await f.signin();
+    expect(signedIn.status).toBe(200);
+    const { token } = (await signedIn.json()) as { token: string };
+    expect(await f.sessionFor(token)).toMatchObject({
+      user: { id: body.user.id, name: "Changed", emailVerified: false },
+    });
+    expect(f.messages).toHaveLength(0);
+    expect(bootstrapUserSpace).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps allowlisted signup closed without delivery once a human account exists", async () => {
+  it("still admits later allowlisted accounts without delivery while refusing others", async () => {
     const f = fixture({ allowlist: "@example.test", delivery: false });
     f.data.user!.push({
       id: "human-1",
@@ -434,11 +453,17 @@ describe("identity trust through auth endpoints", () => {
       createdAt: new Date(),
       updatedAt: new Date(),
     });
-    const response = await f.signup("second@example.test");
-    expect(response.status).toBe(400);
-    expect(await response.text()).toContain("Registration requires email delivery");
-    expect(f.data.user).toHaveLength(1);
-    expect(bootstrapUserSpace).not.toHaveBeenCalled();
+    f.members.add("human-1");
+    const second = await f.signup("second@example.test");
+    expect(second.status).toBe(200);
+    expect(f.data.user).toHaveLength(2);
+    expect(f.data.user![1]!.emailVerified).toBe(false);
+    expect((await f.signin("second@example.test")).status).toBe(200);
+    expect(bootstrapUserSpace).toHaveBeenCalledTimes(1);
+    const outsider = await f.signup("outsider@other.test");
+    expect(outsider.status).toBe(400);
+    expect(await outsider.json()).toMatchObject({ code: "EMAIL_NOT_ALLOWED" });
+    expect(f.messages).toHaveLength(0);
   });
 
   it("requires mailbox proof before creating a session, space or first-owner claim", async () => {
@@ -504,7 +529,7 @@ describe("identity trust through auth endpoints", () => {
   });
 
   it("does not leak request-local verification settings when signup policy changes", async () => {
-    const f = fixture({ delivery: false });
+    const f = fixture();
     expect(await (await f.signup()).json()).toMatchObject({ token: expect.any(String) });
     f.policy.signupAllowlist = "@example.test";
     expect((await f.signin()).status).toBe(403);

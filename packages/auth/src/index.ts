@@ -311,7 +311,10 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
           if (!policy.enabled) return { error: "REGISTRATION_CLOSED" };
           if (!env.oidc?.allowSignupBypass && !emailAllowed(email, policy.allowlist))
             return { error: "EMAIL_NOT_ALLOWED" };
-          if (!env.oidc?.allowSignupBypass && policy.allowlist.length > 0 && !verified)
+          // Mailbox proof is required only when delivery can provide it; an
+          // allowlist without a mail provider still admits its named accounts,
+          // which then stay unverified.
+          if (!env.oidc?.allowSignupBypass && policy.allowlist.length > 0 && env.email && !verified)
             return { error: "EMAIL_VERIFICATION_REQUIRED" };
           return;
         }
@@ -503,14 +506,11 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
               message: "Email is not allowed to register",
             });
           }
-          if (policy.allowlist.length > 0 && !env.email) {
-            throw new APIError("BAD_REQUEST", {
-              message: "Registration requires email delivery",
-            });
-          }
-          requireEmailVerification = policy.allowlist.length > 0;
+          // Without a mail provider nothing can prove a mailbox, so an allowed
+          // address signs up and in directly; it stays unverified.
+          requireEmailVerification = policy.allowlist.length > 0 && Boolean(env.email);
         } else if (policy) {
-          requireEmailVerification = policy.allowlist.length > 0;
+          requireEmailVerification = policy.allowlist.length > 0 && Boolean(env.email);
         }
         const { findSession, updateUser } = ctx.context.internalAdapter;
         // Return a request-local override; mutating the shared auth options
@@ -551,7 +551,9 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
                     if (accounts.some((account) => account.providerId === "oidc")) return session;
                   }
                   policy ??= signupPolicyFromEnv(env);
-                  return policy.allowlist.length === 0 ? session : null;
+                  // Without delivery nothing can prove a mailbox, so the allowlist
+                  // gates registration but never locks out its admitted accounts.
+                  return policy.allowlist.length === 0 || !env.email ? session : null;
                 },
               },
             },
@@ -616,7 +618,12 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
                 message: "Email verification required",
               });
             }
-            if (!user.emailVerified && policy.allowlist.length > 0 && !bypassAllowlist) {
+            if (
+              !user.emailVerified &&
+              policy.allowlist.length > 0 &&
+              env.email &&
+              !bypassAllowlist
+            ) {
               throw new APIError("FORBIDDEN", {
                 code: "EMAIL_VERIFICATION_REQUIRED",
                 message: "Email verification required",
