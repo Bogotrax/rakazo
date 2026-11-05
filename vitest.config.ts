@@ -25,6 +25,7 @@ const mutatesSharedState =
 const root = path.dirname(fileURLToPath(import.meta.url));
 const isolated = include
   .flatMap((pattern) => globSync(pattern, { cwd: root }))
+  .map((file) => file.split(path.sep).join("/"))
   .filter(
     (file) =>
       process.env.COPY_TEST_DATABASE ||
