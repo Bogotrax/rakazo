@@ -538,6 +538,27 @@ export const appContract = {
       .input(z.object({ provider: z.string().trim().min(1), credentialId: Id.optional() }))
       .output(z.object({ ok: z.literal(true) })),
   },
+  botReaders: {
+    list: oc.output(z.array(z.object({ id: Id, name: z.string() }))),
+    messages: oc
+      .input(z.object({ botId: Id, before: z.number().int().nonnegative().optional() }))
+      .output(
+        z.object({
+          id: Id,
+          name: z.string(),
+          messages: z.array(
+            z.object({
+              id: Id,
+              seq: z.number().int(),
+              role: z.string(),
+              text: z.string(),
+              createdAt: z.string(),
+            }),
+          ),
+          nextBefore: z.number().int().optional(),
+        }),
+      ),
+  },
   bots: {
     list: oc.output(z.array(BotSchema)),
     listArchived: oc.output(z.array(BotSchema)),

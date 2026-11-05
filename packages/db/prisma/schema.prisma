@@ -726,6 +726,17 @@ model SpaceVoicePreference {
   @@map("space_voice_preferences")
 }
 
+/// Explicit read-only grants. Foreign keys and cascading cleanup are defined in SQL.
+model BotReader {
+  botId String
+  userId String
+  createdAt DateTime @default(now())
+
+  @@id([botId, userId])
+  @@index([userId])
+  @@map("bot_readers")
+}
+
 model Bot {
   screenGeneration Int @default(0)
   id                String            @id @default(cuid())

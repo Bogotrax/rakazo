@@ -23,6 +23,7 @@ import { useQueryUserId } from "../../lib/query";
 import type { Panel } from "../../lib/right-panel-state";
 import { useSignOut } from "../../lib/sign-out";
 import { ActivityList } from "../ActivityList";
+import { SharedBotLinks } from "../BotReader";
 import { SpaceSearchResults } from "../SpaceSearch";
 import type { SettingsSection } from "../shell-overlay";
 import { SidebarHeader } from "./sidebar-header";
@@ -272,6 +273,12 @@ export function ShellSidebar({
                 />
               ) : null}
               {roster}
+              <SharedBotLinks
+                navigate={(path) => {
+                  setMobileOpen(false);
+                  navigate(path);
+                }}
+              />
             </>
           )}
           <div className={mini ? "hidden" : "contents"}>{archived}</div>

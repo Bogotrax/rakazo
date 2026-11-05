@@ -39,6 +39,7 @@ import {
 } from "./lib/session-gate";
 import { syncLogOutFailure } from "./lib/sign-out";
 import { completeSsoCallback, SSO_CALLBACK_PATH } from "./lib/sso-flow";
+import { BotReaderPage } from "./pages/BotReader";
 import { IntegrationCallbackPage } from "./pages/IntegrationCallback";
 import { IntegrationSetupPage } from "./pages/IntegrationSetup";
 import { McpOAuthCallbackPage } from "./pages/McpOAuthCallback";
@@ -283,6 +284,7 @@ function SessionApp() {
                 }
               >
                 <Route path="/app" element={<ShellPage />} />
+                <Route path="/app/read/:botId" element={<BotReaderPage />} />
                 <Route path="/app/g/:groupId" element={<ShellPage />} />
                 <Route path="/app/:botId" element={<ShellPage />} />
                 <Route element={<CallLayout />}>
